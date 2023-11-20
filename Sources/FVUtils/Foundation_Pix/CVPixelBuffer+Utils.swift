@@ -12,6 +12,79 @@ import Accelerate
 
 public extension CVPixelBuffer {
     
+    func centerRect(side: Int) -> CVPixelBuffer? {
+        
+        CVPixelBufferLockBaseAddress(self, CVPixelBufferLockFlags.readOnly)
+        defer {
+            CVPixelBufferUnlockBaseAddress(self, CVPixelBufferLockFlags.readOnly)
+        }
+        let bufferWidthY = CVPixelBufferGetWidthOfPlane(self, 0)
+        let bufferHeightY = CVPixelBufferGetHeightOfPlane(self, 0)
+        
+        let bufferWidthUV = CVPixelBufferGetWidthOfPlane(self, 1)
+        let bufferHeightUV = CVPixelBufferGetHeightOfPlane(self, 1)
+        
+        let cropWidth = side
+        let cropHeight = side
+
+        /// Calculate the top-left corner of the crop rectangle to center it
+        let xOffsetY = (bufferWidthY - cropWidth) / 2
+        let yOffsetY = (bufferHeightY - cropHeight) / 2
+        
+        /// UV channel has different offsets as its smaller
+        let xOffsetUV = ((bufferWidthUV - cropWidth) / 2) / 2
+        let yOffsetUV = ((bufferHeightUV - cropHeight) / 2) / 2
+
+        
+        /// Get the original base addresses
+        let baseAddressY = CVPixelBufferGetBaseAddressOfPlane(self, 0)
+        let baseAddressUV = CVPixelBufferGetBaseAddressOfPlane(self, 1)
+        
+        let strideY = CVPixelBufferGetBytesPerRowOfPlane(self, 0)
+        let strideUV = CVPixelBufferGetBytesPerRowOfPlane(self, 1)
+        let byteOffsetY = yOffsetY * strideY + xOffsetY
+        let byteOffsetUV = yOffsetUV * strideUV + xOffsetUV * 2
+        
+        /// Create pointers to the offset addresses for each plane
+        let offsetBaseAddressY = baseAddressY?.advanced(by: byteOffsetY)
+        let offsetBaseAddressUV = baseAddressUV?.advanced(by: byteOffsetUV)
+
+        /// Adjust base addresses according to cropRect
+        var baseAddresses: [UnsafeMutableRawPointer?] = [offsetBaseAddressY, offsetBaseAddressUV]
+        
+        /// Strides (bytes per row) remain the same
+        var bytesPerRowOfPlanes: [Int] = [strideY, strideUV]
+        
+        var newPixelBuffer: CVPixelBuffer?
+        var zeroInt: Int = 0
+        var zeroIntAnother: Int = 0
+
+        let result = CVPixelBufferCreateWithPlanarBytes(
+            nil, // allocator
+            cropWidth, // width of the cropped area
+            cropHeight, // height of the cropped area
+            kCVPixelFormatType_420YpCbCr8BiPlanarFullRange, // pixel format
+            nil, // dataPtr: pass nil because we're using the existing memory
+            0, // dataSize: pass 0 because we're using the existing memory
+            2, // plane count
+            &baseAddresses, // new base addresses for the Y plane
+            &zeroInt,
+            &zeroIntAnother, // release callback: pass nil because we don't want to release the memory
+            &bytesPerRowOfPlanes, // stride for the Y plane
+            nil,
+            nil,
+            nil,
+            &newPixelBuffer // dest pixel buffer
+        )
+        
+        if result == kCVReturnSuccess {
+            
+            return newPixelBuffer
+        }
+       return nil
+
+    }
+    
     func cgImageFast() -> CGImage? {
         var cgImage: CGImage?
         VTCreateCGImageFromCVPixelBuffer(self, options: nil, imageOut: &cgImage)
